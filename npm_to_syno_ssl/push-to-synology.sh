@@ -11,6 +11,13 @@
 # Certbot injects these environment variables automatically:
 #   RENEWED_DOMAINS  — space-separated list of renewed domains
 #   RENEWED_LINEAGE  — path to the renewed cert directory (inside container)
+#
+# Author:  Manuel Wenger
+# License: MIT (see LICENSE file or https://opensource.org/licenses/MIT)
+# 
+# DISCLAIMER: This software is provided "as is", without warranty of any kind.
+# Use at your own risk. The author accepts no liability for any damage or data
+# loss caused by the use of this script.
 # =============================================================================
 
 TARGET_DOMAIN="my.hostname.com"
