@@ -7,6 +7,7 @@ A collection of personal utility scripts for system administration, homelab mana
 | Folder | Description |
 |--------|-------------|
 | overlay2_usage | Script to check disk space usage of Docker overlayfs/overlay2 directories |
+| npm_to_syno_ssl | Automate copying of Let's Encrypt SSL certificate from Nginx Proxy Manager to Synology DSM |
 
 ## Usage
 
