@@ -27,6 +27,13 @@ DSM 7 API notes:
   - Login must request enable_syno_token=yes
   - SynoToken must be passed as a query param on EVERY request (GET and POST)
   - Certificate import uses SYNO.Core.Certificate (not .CRT) with method=import
+
+Author:  Manuel Wenger
+License: MIT (see LICENSE file or https://opensource.org/licenses/MIT)
+
+DISCLAIMER: This software is provided "as is", without warranty of any kind.
+Use at your own risk. The author accepts no liability for any damage or data
+loss caused by the use of this script.
 """
 
 import os
