@@ -1,4 +1,4 @@
-# cert-push
+# npm_to_syno_ssl
 
 Automatically pushes a renewed Let's Encrypt certificate from
 [Nginx Proxy Manager](https://nginxproxymanager.com/) to a Synology NAS running DSM 7,
