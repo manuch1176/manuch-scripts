@@ -5,7 +5,7 @@
 In these examples, NPM is running inside Docker on an AlmaLinux host, in the same
 LAN segment like the Synology.
 
-Adapt as needed in push-to-synology.conf:
+Adapt as needed in push-to-synology.conf and push-to-synology.sh:
 
     Inside container        →  Host path  
     /etc/letsencrypt        →  /var/lib/docker/volumes/npm_letsencrypt/_data  
@@ -14,6 +14,7 @@ Adapt as needed in push-to-synology.conf:
     Hook script:    /var/lib/docker/volumes/npm_letsencrypt/_data/renewal-hooks/deploy/  
     Flag file:      /var/lib/docker/volumes/npm_letsencrypt/_data/.cert-renewed  
 
+    Hostname of certificate to renew: my.hostname.com
     Lineage for desired certificate: npm-2
     LAN IP of the Synology: 192.168.0.5
 
