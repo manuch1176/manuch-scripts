@@ -36,6 +36,10 @@ Use at your own risk. The author accepts no liability for any damage or data
 loss caused by the use of this script.
 """
 
+from __future__ import annotations
+
+import argparse
+import datetime
 import os
 import sys
 import json
@@ -67,6 +71,31 @@ def load_config(path: str) -> dict:
             key, _, value = line.partition("=")
             config[key.strip()] = value.strip()
     return config
+
+
+REQUIRED_CONFIG_KEYS = [
+    "SYNO_HOST", "SYNO_PORT", "SYNO_USER", "SYNO_PASS",
+    "SYNO_CERT_DESC", "NPM_LETSENCRYPT_PATH", "CONTAINER_LETSENCRYPT_PATH",
+    "FLAG_FILE", "LOG_FILE",
+]
+
+
+def validate_config(cfg: dict) -> None:
+    """Check all required keys are present and SYNO_PORT is a valid port number."""
+    missing = [k for k in REQUIRED_CONFIG_KEYS if k not in cfg]
+    if missing:
+        print(f"ERROR: Config missing required key(s): {', '.join(missing)}", file=sys.stderr)
+        sys.exit(1)
+    try:
+        port = int(cfg["SYNO_PORT"])
+        if not (1 <= port <= 65535):
+            raise ValueError
+    except ValueError:
+        print(
+            f"ERROR: SYNO_PORT must be an integer between 1 and 65535, got: {cfg['SYNO_PORT']!r}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
 
 # =============================================================================
@@ -252,14 +281,20 @@ class SynologyClient:
                 f"  - id={cert.get('id')} desc={cert.get('desc')} "
                 f"subject={cert.get('subject', {}).get('common_name')}"
             )
-            if cert.get("desc") == description:
-                cert_id = cert["id"]
-                self.logger.info(f"Matched certificate id: {cert_id}")
-                return cert_id
-        raise SynologyAPIError(
-            f"No certificate with description '{description}' found on DSM. "
-            f"Available descriptions: {[c.get('desc') for c in certs]}"
-        )
+        matches = [c for c in certs if c.get("desc") == description]
+        if not matches:
+            raise SynologyAPIError(
+                f"No certificate with description '{description}' found on DSM. "
+                f"Available descriptions: {[c.get('desc') for c in certs]}"
+            )
+        if len(matches) > 1:
+            self.logger.warning(
+                f"Multiple certificates found with description '{description}' "
+                f"— using the first. Remove duplicates from DSM to avoid ambiguity."
+            )
+        cert_id = matches[0]["id"]
+        self.logger.info(f"Matched certificate id: {cert_id}")
+        return cert_id
 
     def upload_certificate(self, cert_id: str, cert_path: Path, key_path: Path, chain_path: Path):
         """
@@ -317,17 +352,57 @@ def translate_path(container_path: str, container_prefix: str, host_volume_path:
     return Path(host_volume_path) / relative
 
 
+def validate_pem(path: Path, logger: logging.Logger) -> None:
+    """Exit with an error if the file does not contain a recognisable PEM block."""
+    try:
+        text = path.read_text(errors="replace")
+    except OSError as e:
+        logger.error(f"Cannot read cert file {path}: {e}")
+        sys.exit(1)
+    if "-----BEGIN " not in text:
+        logger.error(f"File does not appear to be valid PEM: {path}")
+        sys.exit(1)
+
+
+def write_status(cfg: dict, success: bool, message: str) -> None:
+    """Write a JSON status file next to the log file for monitoring integration."""
+    status_path = Path(cfg["LOG_FILE"]).with_suffix(".status.json")
+    status = {
+        "timestamp": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "success": success,
+        "message": message,
+    }
+    try:
+        status_path.write_text(json.dumps(status, indent=2))
+    except OSError:
+        pass  # best-effort — do not fail the main operation over a status file
+
+
 # =============================================================================
 # Main
 # =============================================================================
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="Push a renewed Let's Encrypt certificate from NPM to Synology DSM."
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate config, locate cert on DSM, but do not upload or delete the flag file.",
+    )
+    args = parser.parse_args()
+
     if not os.path.exists(CONFIG_FILE):
         print(f"ERROR: Config file not found: {CONFIG_FILE}", file=sys.stderr)
         sys.exit(1)
 
     cfg = load_config(CONFIG_FILE)
+    validate_config(cfg)
     logger = setup_logging(cfg["LOG_FILE"])
+
+    if args.dry_run:
+        logger.info("DRY-RUN mode — no changes will be made to DSM or the flag file")
 
     flag_file = Path(cfg["FLAG_FILE"])
 
@@ -362,26 +437,38 @@ def main():
             logger.error(f"Required cert file not found: {f}")
             sys.exit(1)
 
-    logger.info(f"cert:  {cert_file}")
-    logger.info(f"key:   {key_file}")
-    logger.info(f"chain: {chain_file} ({'present' if chain_file.exists() else 'absent'})")
+    logger.debug(f"cert:  {cert_file}")
+    logger.debug(f"key:   {key_file}")
+    logger.debug(f"chain: {chain_file} ({'present' if chain_file.exists() else 'absent'})")
+
+    validate_pem(cert_file, logger)
+    validate_pem(key_file, logger)
 
     client = SynologyClient(cfg["SYNO_HOST"], int(cfg["SYNO_PORT"]), logger)
 
     try:
         client.login(cfg["SYNO_USER"], cfg["SYNO_PASS"])
         cert_id = client.find_certificate_id(cfg["SYNO_CERT_DESC"])
-        client.upload_certificate(cert_id, cert_file, key_file, chain_file)
 
-        flag_file.unlink()
-        logger.info("Flag file removed")
-        logger.info("Certificate push completed successfully")
+        if args.dry_run:
+            logger.info(
+                f"[DRY RUN] Would upload {cert_file} to DSM certificate "
+                f"'{cfg['SYNO_CERT_DESC']}' (id={cert_id})"
+            )
+        else:
+            client.upload_certificate(cert_id, cert_file, key_file, chain_file)
+            flag_file.unlink()
+            logger.info("Flag file removed")
+            logger.info("Certificate push completed successfully")
+            write_status(cfg, True, "Certificate push completed successfully")
 
     except SynologyAPIError as e:
         logger.error(f"DSM API error: {e}")
+        write_status(cfg, False, f"DSM API error: {e}")
         sys.exit(1)
     except Exception as e:
         logger.exception(f"Unexpected error: {e}")
+        write_status(cfg, False, f"Unexpected error: {e}")
         sys.exit(1)
     finally:
         client.logout()

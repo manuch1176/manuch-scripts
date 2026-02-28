@@ -44,6 +44,13 @@ In DSM → Control Panel → User & Group → Create:
     chmod +x \
       /var/lib/docker/volumes/npm_letsencrypt/_data/renewal-hooks/deploy/push-to-synology.sh
 
+    # Create the domain config file (read by the hook script inside the container)
+    echo "my.hostname.com" > \
+      /var/lib/docker/volumes/npm_letsencrypt/_data/.cert-push-domain
+
+    chmod 644 \
+      /var/lib/docker/volumes/npm_letsencrypt/_data/.cert-push-domain
+
 
 ## 4. Deploy the host-side script and config
 
@@ -75,11 +82,18 @@ In DSM → Control Panel → User & Group → Create:
     echo "/etc/letsencrypt/live/npm-2" > \
       /var/lib/docker/volumes/npm_letsencrypt/_data/.cert-renewed
 
-    # Step 2: Run the Python script manually
+    # Step 2 (optional): Dry-run first — validates config and locates cert on DSM
+    # without uploading anything or deleting the flag file
+    python3 /opt/cert-push/push-to-synology.py --dry-run
+
+    # Step 3: Run the Python script for real
     python3 /opt/cert-push/push-to-synology.py
 
-    # Step 3: Check the log
+    # Step 4: Check the log
     cat /opt/cert-push/push-to-synology.log
+
+    # Step 5: Check the machine-readable status file (useful for monitoring)
+    cat /opt/cert-push/push-to-synology.status.json
 <!-- -->
 ```
 # python3 /opt/cert-push/push-to-synology.py
@@ -124,3 +138,33 @@ In DSM → Control Panel → User & Group → Create:
 
 - The hook script silently does nothing if a different cert is renewed —
   it only fires for my.hostname.com.
+
+- A JSON status file is written after every run to `/opt/cert-push/push-to-synology.status.json`.
+  Use it for integration with monitoring tools (Nagios, Uptime Kuma, etc.):
+
+      cat /opt/cert-push/push-to-synology.status.json
+      # {"timestamp": "2026-02-28T10:00:00Z", "success": true, "message": "..."}
+
+
+## Recovery — restoring a certificate manually
+
+If a push leaves DSM with a broken or incorrect certificate (e.g. the upload succeeded
+but the cert file was corrupt), recover as follows:
+
+1. **On the Synology DSM web UI:** go to Control Panel → Security → Certificate.
+   Note the current certificate description (e.g. `my.hostname.com`).
+
+2. **Import the previous good certificate manually** via the DSM UI:
+   - Click the certificate → Actions → Edit → Replace certificate
+   - Upload the last known-good `fullchain.pem`, `privkey.pem`, and `chain.pem`
+   - These are available in the NPM letsencrypt volume under the lineage directory:
+     `/var/lib/docker/volumes/npm_letsencrypt/_data/live/<lineage>/`
+   - If the current files are already corrupt, locate an older copy from NPM's
+     `/archive/` directory: `/var/lib/docker/volumes/npm_letsencrypt/_data/archive/<lineage>/`
+     and use the highest-numbered set (e.g. `cert3.pem`, `privkey3.pem`, `chain3.pem`).
+
+3. **Remove the flag file** so the cron job does not re-push the corrupt cert:
+
+       rm -f /var/lib/docker/volumes/npm_letsencrypt/_data/.cert-renewed
+
+4. Wait for the next legitimate NPM renewal to re-trigger the automatic push.
