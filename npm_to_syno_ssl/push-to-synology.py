@@ -283,6 +283,18 @@ class SynologyClient:
             )
         matches = [c for c in certs if c.get("desc") == description]
         if not matches:
+            # Fallback: match by subject CN (handles certs uploaded without a description)
+            matches = [
+                c for c in certs
+                if c.get("subject", {}).get("common_name") == description
+            ]
+            if matches:
+                self.logger.warning(
+                    f"No certificate matched description '{description}'; "
+                    f"falling back to subject CN match. "
+                    f"The description will be set correctly after the next upload."
+                )
+        if not matches:
             raise SynologyAPIError(
                 f"No certificate with description '{description}' found on DSM. "
                 f"Available descriptions: {[c.get('desc') for c in certs]}"
@@ -296,7 +308,7 @@ class SynologyClient:
         self.logger.info(f"Matched certificate id: {cert_id}")
         return cert_id
 
-    def upload_certificate(self, cert_id: str, cert_path: Path, key_path: Path, chain_path: Path):
+    def upload_certificate(self, cert_id: str, cert_path: Path, key_path: Path, chain_path: Path, description: str = ""):
         """
         Replace an existing DSM certificate with new cert/key files.
 
@@ -319,7 +331,7 @@ class SynologyClient:
 
         fields = {
             "id":         cert_id,
-            "desc":       "",        # keep existing description unchanged
+            "desc":       description,
             "as_default": "false",
         }
 
@@ -456,7 +468,8 @@ def main():
                 f"'{cfg['SYNO_CERT_DESC']}' (id={cert_id})"
             )
         else:
-            client.upload_certificate(cert_id, cert_file, key_file, chain_file)
+            client.upload_certificate(cert_id, cert_file, key_file, chain_file,
+                                      description=cfg["SYNO_CERT_DESC"])
             flag_file.unlink()
             logger.info("Flag file removed")
             logger.info("Certificate push completed successfully")
