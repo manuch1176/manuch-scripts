@@ -71,6 +71,17 @@ valid certificate — harmless.
   all shared folder access, all application access except DSM, and blocking SSH login
   for the account.
 
+## Security note — TLS verification
+
+The Python script connects to DSM over HTTPS but **disables TLS certificate verification**
+(`ssl.CERT_NONE`). This is intentional: Synology DSM commonly presents a self-signed
+certificate on the LAN, so standard verification would always fail.
+
+This trade-off is acceptable **only on a trusted private network**. Do not expose the DSM
+API port to untrusted networks. If your DSM has a valid certificate from a public CA (e.g.
+via Let's Encrypt), you can harden the connection by enabling verification in the
+`SynologyClient` constructor (`check_hostname = True`, `verify_mode = ssl.CERT_REQUIRED`).
+
 ## Setup
 
 See [SETUP.md](SETUP.md) for full installation instructions.
