@@ -9,6 +9,7 @@ A collection of personal utility scripts for system administration, homelab mana
 | overlay2_usage | Script to check disk space usage of Docker overlayfs/overlay2 directories |
 | npm_to_syno_ssl | Automate copying of Let's Encrypt SSL certificate from Nginx Proxy Manager to Synology DSM |
 | hammerspoon_spaces | Hammerspoon Spaces Manager script for macOS to automate moving app windows between spaces |
+| yt_subscription_audit | YouTube Subscription Auditor, helpful to clean up old subscribed channels that are inactive |
 
 ## Usage
 
